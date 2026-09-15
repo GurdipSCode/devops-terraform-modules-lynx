@@ -1,0 +1,263 @@
+rules:
+  # Generic Terraform / OpenTofu checks
+  - id: terraform-hardcoded-sensitive-value
+    languages: [terraform]
+    severity: ERROR
+    message: >-
+      A sensitive value appears to be hard-coded. Pass it through a sensitive
+      variable or retrieve it from a secret manager instead.
+    metadata:
+      category: security
+      confidence: MEDIUM
+      technology: [terraform, opentofu]
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+    patterns:
+      - pattern-either:
+          - pattern: password = "$VALUE"
+          - pattern: admin_password = "$VALUE"
+          - pattern: client_secret = "$VALUE"
+          - pattern: secret_key = "$VALUE"
+          - pattern: access_key = "$VALUE"
+          - pattern: token = "$VALUE"
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: "^(?!.*\\$\\{)(?!REDACTED$)(?!CHANGEME$)(?!example$).{8,}$"
+
+  - id: terraform-sensitive-variable-not-marked-sensitive
+    languages: [terraform]
+    severity: WARNING
+    message: Mark variables containing secrets as `sensitive = true`.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu]
+      cwe: "CWE-200: Exposure of Sensitive Information"
+    patterns:
+      - pattern-inside: |
+          variable "$NAME" {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: "(?i).*(password|secret|token|private_key|access_key|api_key).*"
+      - pattern-not-inside: |
+          variable "$NAME" {
+            ...
+            sensitive = true
+            ...
+          }
+
+  - id: terraform-tls-verification-disabled
+    languages: [terraform]
+    severity: ERROR
+    message: TLS certificate verification is disabled.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu]
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern-either:
+      - pattern: insecure = true
+      - pattern: skip_tls_verify = true
+      - pattern: insecure_skip_tls_verify = true
+
+  # AWS checks
+  - id: terraform-aws-s3-public-access-block-disabled
+    languages: [terraform]
+    severity: ERROR
+    message: S3 public-access blocking must not be disabled.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, aws]
+      cwe: "CWE-284: Improper Access Control"
+    patterns:
+      - pattern-inside: |
+          resource "aws_s3_bucket_public_access_block" "$NAME" {
+            ...
+          }
+      - pattern-either:
+          - pattern: block_public_acls = false
+          - pattern: block_public_policy = false
+          - pattern: ignore_public_acls = false
+          - pattern: restrict_public_buckets = false
+
+  - id: terraform-aws-security-group-world-open-sensitive-port
+    languages: [terraform]
+    severity: ERROR
+    message: A sensitive port is open to the internet. Restrict the CIDR range.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, aws]
+      cwe: "CWE-284: Improper Access Control"
+    patterns:
+      - pattern-inside: |
+          resource "$RESOURCE" "$NAME" {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $RESOURCE
+          regex: "^aws_(security_group|security_group_rule|vpc_security_group_ingress_rule)$"
+      - pattern-either:
+          - pattern: cidr_blocks = [..., "0.0.0.0/0", ...]
+          - pattern: cidr_ipv4 = "0.0.0.0/0"
+          - pattern: ipv6_cidr_blocks = [..., "::/0", ...]
+          - pattern: cidr_ipv6 = "::/0"
+      - pattern-either:
+          - pattern: from_port = 22
+          - pattern: from_port = 3389
+          - pattern: from_port = 5432
+          - pattern: from_port = 3306
+          - pattern: from_port = 6379
+          - pattern: from_port = 27017
+
+  - id: terraform-aws-rds-publicly-accessible
+    languages: [terraform]
+    severity: ERROR
+    message: An RDS database must not be publicly accessible.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, aws]
+      cwe: "CWE-284: Improper Access Control"
+    patterns:
+      - pattern-inside: |
+          resource "$RESOURCE" "$NAME" {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $RESOURCE
+          regex: "^aws_(db_instance|rds_cluster)$"
+      - pattern: publicly_accessible = true
+
+  - id: terraform-aws-ebs-encryption-disabled
+    languages: [terraform]
+    severity: ERROR
+    message: EBS encryption must not be disabled.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, aws]
+      cwe: "CWE-311: Missing Encryption of Sensitive Data"
+    patterns:
+      - pattern-inside: |
+          resource "$RESOURCE" "$NAME" {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $RESOURCE
+          regex: "^aws_(ebs_volume|ebs_encryption_by_default)$"
+      - pattern: enabled = false
+
+  # Azure checks
+  - id: terraform-azure-public-network-access-enabled
+    languages: [terraform]
+    severity: WARNING
+    message: >-
+      Public network access is enabled. Prefer a private endpoint and explicitly
+      document any exception.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, azure]
+      cwe: "CWE-284: Improper Access Control"
+    patterns:
+      - pattern-inside: |
+          resource "$RESOURCE" "$NAME" {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: $RESOURCE
+          regex: "^azurerm_(key_vault|storage_account|container_registry|cosmosdb_account|servicebus_namespace|eventhub_namespace|cognitive_account|machine_learning_workspace)$"
+      - pattern: public_network_access_enabled = true
+
+  - id: terraform-azure-storage-public-blob-access
+    languages: [terraform]
+    severity: ERROR
+    message: Public nested-item/blob access is enabled on this storage account.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, azure]
+      cwe: "CWE-284: Improper Access Control"
+    patterns:
+      - pattern-inside: |
+          resource "azurerm_storage_account" "$NAME" {
+            ...
+          }
+      - pattern: allow_nested_items_to_be_public = true
+
+  - id: terraform-azure-key-vault-purge-protection-disabled
+    languages: [terraform]
+    severity: WARNING
+    message: Enable Key Vault purge protection for production-grade recovery.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, azure]
+      cwe: "CWE-693: Protection Mechanism Failure"
+    patterns:
+      - pattern-inside: |
+          resource "azurerm_key_vault" "$NAME" {
+            ...
+          }
+      - pattern: purge_protection_enabled = false
+
+  - id: terraform-azure-aks-private-cluster-disabled
+    languages: [terraform]
+    severity: WARNING
+    message: AKS private-cluster mode is explicitly disabled.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology: [terraform, opentofu, azure, kubernetes]
+      cwe: "CWE-284: Improper Access Control"
+    patterns:
+      - pattern-inside: |
+          resource "azurerm_kubernetes_cluster" "$NAME" {
+            ...
+          }
+      - pattern: private_cluster_enabled = false
+
+  # Module quality checks
+  - id: terraform-module-variable-description-missing
+    languages: [terraform]
+    severity: INFO
+    message: Add a description to this module input variable.
+    metadata:
+      category: maintainability
+      confidence: HIGH
+      technology: [terraform, opentofu]
+    patterns:
+      - pattern: |
+          variable "$NAME" {
+            ...
+          }
+      - pattern-not: |
+          variable "$NAME" {
+            ...
+            description = $DESCRIPTION
+            ...
+          }
+
+  - id: terraform-module-output-description-missing
+    languages: [terraform]
+    severity: INFO
+    message: Add a description to this module output.
+    metadata:
+      category: maintainability
+      confidence: HIGH
+      technology: [terraform, opentofu]
+    patterns:
+      - pattern: |
+          output "$NAME" {
+            ...
+          }
+      - pattern-not: |
+          output "$NAME" {
+            ...
+            description = $DESCRIPTION
+            ...
+          }
+
