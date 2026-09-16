@@ -1,0 +1,46 @@
+# OpenTofu state
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# OpenTofu working directories
+.terraform/
+.tofu/
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Variable files that may contain secrets
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Saved plan files
+*.tfplan
+*.plan
+
+# CLI configuration
+.terraformrc
+terraform.rc
+.tofurc
+tofu.rc
+
+# Environment files
+.env
+.env.*
+
+# Local tooling and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
